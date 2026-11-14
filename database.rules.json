@@ -1,0 +1,16 @@
+{
+  "rules": {
+    "games": {
+      "$pin": {
+        ".read": "auth != null",
+        ".write": "auth != null && (!data.exists() || data.child('host').val() === auth.uid)",
+        "players": {
+          ".write": "auth != null && data.parent().child('host').exists()"
+        },
+        "events": {
+          ".write": "auth != null && data.parent().child('host').exists()"
+        }
+      }
+    }
+  }
+}
