@@ -1,5 +1,5 @@
 // Lớp dữ liệu dùng chung: Firebase Realtime Database (chơi thật) hoặc localStorage (chế độ thử, các tab cùng máy).
-import { FIREBASE_CONFIG } from './firebase-config.js';
+import { FIREBASE_CONFIG } from './firebase-config.js?v=2';
 
 const FB = 'https://www.gstatic.com/firebasejs/10.12.2/';
 

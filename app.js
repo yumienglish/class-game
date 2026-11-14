@@ -1,4 +1,4 @@
-import { connect } from './backend.js';
+import { connect } from './backend.js?v=2';
 
 const $app = document.getElementById('app');
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
