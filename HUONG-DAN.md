@@ -47,6 +47,13 @@ Gói miễn phí (Spark) cho phép 100 kết nối cùng lúc, thừa sức cho 
 5. Màn kết quả hiện bục 1-2-3 và bảng số câu đúng/sai, tỉ lệ đúng của từng em.
    **🔁 Chơi lại** giữ nguyên nhóm và đề, điểm về 0.
 
+**Bộ từ vựng có tranh** (ô 📚 Bộ đề → nhóm "Bộ từ vựng có tranh"):
+- 🖼️ **Unit 8 – Get Set, Go! (PET B1)**: 55 từ. 14 tranh lấy từ artifact flashcard Unit 8 (file `.webp`), 41 tranh vẽ thêm (file `.svg`), tất cả nằm trong `img/u8/`.
+- Chọn dạng câu (trộn lẫn): 🖼️ Tranh → từ · 💬 Nghĩa Việt → từ · 📖 Định nghĩa tiếng Anh → từ · 🔤 Từ → chọn tranh.
+- Chọn chủ đề (Sports, Places, Gear…) để chỉ ôn một phần từ.
+- Đáp án nhiễu lấy cùng chủ đề. Những tranh dễ nhầm nhau (vd: equipment / helmet, coach / instructor) không bao giờ là đáp án nhiễu của nhau; danh sách này nằm ở `confuse` trong `decks/unit8.js`.
+- Muốn sửa nghĩa hoặc định nghĩa: sửa trong `decks/unit8.js`, rồi tăng `?v=` của file đó trong `app.js` (biến `DECKS`).
+
 **Học sinh**: mở link → nhập mã phòng, tên, chọn con vật → **Vào chơi**.
 Tải lại trang hoặc rớt mạng vẫn giữ được điểm (miễn là không đóng tab).
 

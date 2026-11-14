@@ -51,6 +51,43 @@ const playersOf = g => Object.entries(g?.players || {})
   .map(([id, p]) => ({ id, name: p.name, avatar: p.avatar || '🙂', score: p.score || 0, right: p.right || 0, wrong: p.wrong || 0, online: p.online !== false, joinedAt: p.joinedAt || 0 }))
   .sort((a, b) => b.score - a.score || a.joinedAt - b.joinedAt);
 
+// ---------- Bộ từ vựng có tranh ----------
+const DECKS = { u8: { title: 'Unit 8 – Get Set, Go! (PET B1)', file: './decks/unit8.js?v=3' } };
+const QTYPES = { pic: '🖼️ Tranh → từ', vi: '💬 Nghĩa Việt → từ', def: '📖 Định nghĩa → từ', word2pic: '🔤 Từ → tranh' };
+const deckCache = {};
+function loadDeck(id) {
+  if (!DECKS[id]) return Promise.reject(new Error('Không có bộ từ ' + id));
+  return deckCache[id] ||= import(DECKS[id].file).then(m => m.DECK);
+}
+function pickDistractors(deck, word, n, pool) {
+  const bad = new Set([word.w]);
+  deck.confuse.forEach(g => { if (g.includes(word.w)) g.forEach(x => bad.add(x)); });
+  const ok = w => !bad.has(w.w);
+  const out = shuffle(deck.words.filter(w => w.c === word.c && ok(w))).slice(0, n);
+  for (const src of [pool, deck.words]) {
+    if (out.length >= n) break;
+    shuffle(src.filter(w => ok(w) && !out.includes(w))).slice(0, n - out.length).forEach(w => out.push(w));
+  }
+  return out;
+}
+const imgTag = (src, cls = '') => `<img src="${esc(src)}" alt="" class="${cls}" draggable="false">`;
+function deckQuestion(deck, word, type, pool) {
+  const opts = shuffle([word, ...pickDistractors(deck, word, 3, pool)]);
+  const answer = `${imgTag(word.img, 'mini')} <b>${esc(word.w)}</b> – ${esc(word.vi)}`;
+  if (type === 'word2pic') return {
+    pics: true, answer,
+    prompt: `<div class="qsub">🔤 Chọn tranh đúng với từ:</div><div class="qtext">${esc(word.w)}</div>`,
+    opts: opts.map(w => ({ html: imgTag(w.img), ok: w === word })),
+  };
+  const prompt = type === 'pic' ? `${imgTag(word.img, 'qimg')}<div class="qsub">What is this?</div>`
+    : type === 'vi' ? `<div class="qsub">💬 Từ nào có nghĩa là…</div><div class="qtext">${esc(word.vi)}</div>`
+    : `<div class="qsub">📖 Which word means…</div><div class="qtext def">“${esc(word.en)}”</div>`;
+  return { prompt, answer, opts: opts.map(w => ({ html: esc(w.w), ok: w === word })) };
+}
+function textQuestion(q) {
+  return { prompt: `<div class="qtext">${esc(q.q)}</div>`, answer: `<b>${esc(q.a[0])}</b>`, opts: shuffle(q.a.map((t, i) => ({ html: esc(t), ok: i === 0 }))) };
+}
+
 function parseQuestions(text) {
   const qs = [], errors = [];
   text.split(/\r?\n/).forEach((line, i) => {
@@ -130,27 +167,59 @@ function hostSetup() {
   SS.del('hostPin');
   const sets = LS.get('sets', []);
   let mins = LS.get('mins', 5);
+  let deckTypes = LS.get('deckTypes', Object.keys(QTYPES));
+  let deckCats = LS.get('deckCats', null);
+  let deck = null;
   $app.innerHTML = `
     <div class="card">
       <h1>🎓 Tạo phòng chơi</h1>
       <label class="lbl">📚 Bộ đề <select id="sel"></select></label>
-      <input id="title" placeholder="Tên bộ đề (vd: Unit 2 – Present Simple)">
-      <textarea id="qs" rows="12" spellcheck="false"></textarea>
-      <div class="hint">Mỗi dòng 1 câu: <code>Câu hỏi | đáp án ĐÚNG | sai | sai | sai</code> (2–4 đáp án). Dòng bắt đầu bằng # bị bỏ qua. Đáp án sẽ được xáo trộn.</div>
-      <div id="info" class="info"></div>
-      <div class="row"><button id="save" class="ghost">💾 Lưu bộ đề</button><button id="del" class="ghost">🗑️ Xóa bộ đề</button></div>
+      <div id="pasteBox">
+        <input id="title" placeholder="Tên bộ đề (vd: Unit 2 – Present Simple)">
+        <textarea id="qs" rows="12" spellcheck="false"></textarea>
+        <div class="hint">Mỗi dòng 1 câu: <code>Câu hỏi | đáp án ĐÚNG | sai | sai | sai</code> (2–4 đáp án). Dòng bắt đầu bằng # bị bỏ qua. Đáp án sẽ được xáo trộn.</div>
+        <div id="info" class="info"></div>
+        <div class="row"><button id="save" class="ghost">💾 Lưu bộ đề</button><button id="del" class="ghost">🗑️ Xóa bộ đề</button></div>
+      </div>
+      <div id="deckBox" hidden>
+        <div id="deckPrev" class="deckprev"></div>
+        <div class="lbl">❓ Dạng câu hỏi (trộn lẫn)</div>
+        <div class="chips" id="dTypes">${Object.entries(QTYPES).map(([k, v]) => `<button data-t="${k}" class="chip">${v}</button>`).join('')}</div>
+        <div class="lbl">🏷️ Chủ đề</div>
+        <div class="chips" id="dCats"></div>
+        <div id="dInfo" class="info"></div>
+      </div>
       <div class="lbl">⏱️ Thời gian chơi</div>
       <div class="chips" id="mins">${[3, 5, 7, 10, 15].map(m => `<button data-m="${m}" class="chip">${m} phút</button>`).join('')}</div>
       <button id="create" class="big">🚀 Tạo phòng</button>
     </div>`;
   const sel = $('#sel'), title = $('#title'), ta = $('#qs'), info = $('#info');
   const fillSel = id => {
-    sel.innerHTML = `<option value="">📘 Bộ đề mẫu</option>` +
+    sel.innerHTML = `<optgroup label="Bộ từ vựng có tranh">${Object.entries(DECKS).map(([k, d]) => `<option value="deck:${k}">🖼️ ${esc(d.title)}</option>`).join('')}</optgroup>` +
+      `<optgroup label="Bộ đề tự dán"><option value="">📘 Bộ đề mẫu</option>` +
       sets.map(s => `<option value="${esc(s.id)}">${esc(s.title)}</option>`).join('') +
-      `<option value="__new">➕ Bộ đề mới (trống)</option>`;
-    sel.value = id && sets.some(s => s.id === id) ? id : '';
+      `<option value="__new">➕ Bộ đề mới (trống)</option></optgroup>`;
+    sel.value = id && (sets.some(s => s.id === id) || DECKS[id.slice(5)]) ? id : '';
   };
-  const load = () => {
+  const deckWords = () => deck ? deck.words.filter(w => deckCats.includes(w.c)) : [];
+  const showDeck = () => {
+    $('#dTypes').querySelectorAll('.chip').forEach(b => b.classList.toggle('on', deckTypes.includes(b.dataset.t)));
+    $('#dCats').querySelectorAll('.chip').forEach(b => b.classList.toggle('on', deckCats.includes(b.dataset.c)));
+    const n = deckWords().length;
+    $('#dInfo').innerHTML = n >= 4 && deckTypes.length ? `✅ <b>${n}</b> từ · ${deckTypes.length} dạng câu` : '⚠️ Cần chọn ít nhất 1 dạng câu và đủ 4 từ';
+  };
+  const load = async () => {
+    const isDeck = sel.value.startsWith('deck:');
+    $('#pasteBox').hidden = isDeck; $('#deckBox').hidden = !isDeck;
+    LS.set('lastSet', sel.value);
+    if (isDeck) {
+      deck = await loadDeck(sel.value.slice(5));
+      if (!deckCats || !deckCats.some(c => deck.cats[c])) deckCats = Object.keys(deck.cats);
+      $('#dCats').innerHTML = Object.entries(deck.cats).map(([k, v]) => `<button data-c="${k}" class="chip">${esc(v)} <small>${deck.words.filter(w => w.c === k).length}</small></button>`).join('');
+      $('#deckPrev').innerHTML = shuffle(deck.words).slice(0, 8).map(w => `<img src="${w.img}" alt="" title="${esc(w.w)}">`).join('');
+      showDeck();
+      return;
+    }
     const s = sets.find(s => s.id === sel.value);
     if (sel.value === '__new') { title.value = ''; ta.value = ''; }
     else if (s) { title.value = s.title; ta.value = s.text; }
@@ -166,6 +235,16 @@ function hostSetup() {
   fillSel(LS.get('lastSet', '')); load(); setMins(mins);
   sel.onchange = load;
   ta.oninput = showInfo;
+  $('#dTypes').onclick = e => {
+    const b = e.target.closest('[data-t]'); if (!b) return;
+    deckTypes = deckTypes.includes(b.dataset.t) ? deckTypes.filter(t => t !== b.dataset.t) : [...deckTypes, b.dataset.t];
+    LS.set('deckTypes', deckTypes); showDeck();
+  };
+  $('#dCats').onclick = e => {
+    const b = e.target.closest('[data-c]'); if (!b) return;
+    deckCats = deckCats.includes(b.dataset.c) ? deckCats.filter(c => c !== b.dataset.c) : [...deckCats, b.dataset.c];
+    LS.set('deckCats', deckCats); showDeck();
+  };
   $('#mins').onclick = e => { const b = e.target.closest('[data-m]'); if (b) setMins(+b.dataset.m); };
   $('#save').onclick = () => {
     const t = title.value.trim() || 'Bộ đề không tên';
@@ -182,8 +261,16 @@ function hostSetup() {
     sets.splice(i, 1); LS.set('sets', sets); fillSel(''); load();
   };
   $('#create').onclick = async () => {
-    const { qs } = parseQuestions(ta.value);
-    if (qs.length < 2) return toast('⚠️ Cần ít nhất 2 câu hỏi');
+    let room;
+    if (sel.value.startsWith('deck:')) {
+      const n = deckWords().length;
+      if (n < 4 || !deckTypes.length) return toast('⚠️ Cần chọn ít nhất 1 dạng câu và đủ 4 từ');
+      room = { title: deck.title, deck: deck.id, types: deckTypes, cats: deckCats, qcount: n };
+    } else {
+      const { qs } = parseQuestions(ta.value);
+      if (qs.length < 2) return toast('⚠️ Cần ít nhất 2 câu hỏi');
+      room = { title: title.value.trim() || 'Treasure Quiz', questions: qs, qcount: qs.length };
+    }
     const btn = $('#create'); btn.disabled = true;
     try {
       let pin;
@@ -191,10 +278,7 @@ function hostSetup() {
         pin = String(100000 + Math.floor(Math.random() * 900000));
         if (!(await api.get(`games/${pin}/host`))) break;
       }
-      await api.set(`games/${pin}`, {
-        host: api.uid, title: title.value.trim() || 'Treasure Quiz', status: 'lobby',
-        duration: mins * 60, questions: qs, createdAt: api.now(),
-      });
+      await api.set(`games/${pin}`, { ...room, host: api.uid, status: 'lobby', duration: mins * 60, createdAt: api.now() });
       hostGame(pin);
     } catch (e) { console.error(e); toast('❌ Không tạo được phòng: ' + esc(e.message)); btn.disabled = false; }
   };
@@ -229,7 +313,7 @@ function hostGame(pin) {
           <div>Học sinh mở link rồi nhập mã phòng:</div>
           <div class="pin">${fmtPin(pin)}</div>
           <div class="linkrow"><code id="link">${esc(joinUrl(pin))}</code><button id="copy" class="ghost small">📋 Copy</button></div>
-          <div class="sub">${game.questions.length} câu · ${Math.round(game.duration / 60)} phút</div>
+          <div class="sub">${game.deck ? `🖼️ ${game.qcount} từ · ${game.types.map(t => QTYPES[t]?.split(' ')[0] || '').join(' ')}` : `${game.qcount || game.questions?.length || 0} câu`} · ${Math.round(game.duration / 60)} phút</div>
           <div id="lobby" class="lobby"></div>
           <button id="start" class="big">▶️ Bắt đầu!</button>
           <button id="cancel" class="ghost">Hủy phòng</button>
@@ -344,8 +428,14 @@ function playerGame(pin) {
   SS.set('playerPin', pin);
   const me = api.uid, G = `games/${pin}`, MY = `${G}/players/${me}`;
   unsubs.push(api.presence(`${MY}/online`));
-  let game = null, view = null, seenEv = null, order = [], qi = 0, phase = null;
+  let game = null, view = null, seenEv = null, order = [], qi = 0, phase = null, deck = null, preloaded = null;
   const seenChips = new Set();
+  // tải trước toàn bộ tranh ngay khi vào phòng để lúc chơi hiện tức thì
+  const preload = id => {
+    if (preloaded === id) return;
+    preloaded = id;
+    loadDeck(id).then(d => { deck = d; d.words.forEach(w => { const im = new Image(); im.src = w.img; }); }).catch(() => {});
+  };
 
   const leave = msg => { stopAll(); joinView(pin, msg); };
   const myInfo = () => playersOf(game).find(p => p.id === me) || { name: '', avatar: '🙂', score: 0, right: 0, wrong: 0 };
@@ -355,6 +445,7 @@ function playerGame(pin) {
     if (!g) return leave('Phòng đã đóng 👋');
     if (!g.players?.[me]?.name) return leave('Em đã ra khỏi phòng');
     game = g;
+    if (g.deck) preload(g.deck);
     checkEvents();
     const st = status();
     if (view !== st) { view = st; build(); }
@@ -445,22 +536,29 @@ function playerGame(pin) {
 
   // ----- câu hỏi -----
   function nextQuestion() {
-    const qs = game.questions || [];
     const stage = $('#stage');
     if (!stage) return;
-    if (!qs.length) { stage.innerHTML = '<div class="msg">Chưa có câu hỏi</div>'; return; }
+    if (game.deck && !deck) {
+      stage.innerHTML = '<div class="msg">Đang tải tranh… 🖼️</div>';
+      loadDeck(game.deck).then(d => { deck = d; nextQuestion(); }).catch(e => { stage.innerHTML = `<div class="msg bad">${esc(e.message)}</div>`; });
+      return;
+    }
+    const pool = game.deck ? deck.words.filter(w => (game.cats || []).includes(w.c)) : (game.questions || []);
+    if (!pool.length) { stage.innerHTML = '<div class="msg">Chưa có câu hỏi</div>'; return; }
     if (qi >= order.length) {
       const last = order[order.length - 1];
-      order = shuffle(qs.map((_, i) => i));
+      order = shuffle(pool.map((_, i) => i));
       if (order.length > 1 && order[0] === last) [order[0], order[1]] = [order[1], order[0]];
       qi = 0;
     }
-    const q = qs[order[qi++]];
-    const opts = shuffle(q.a.map((t, i) => ({ t, ok: i === 0 })));
+    const item = pool[order[qi++]];
+    const types = game.types?.length ? game.types : ['pic'];
+    const Q = game.deck ? deckQuestion(deck, item, types[Math.floor(Math.random() * types.length)], pool) : textQuestion(item);
+    const opts = Q.opts;
     phase = 'q';
     stage.innerHTML = `
-      <div class="qcard"><div class="qtext">${esc(q.q)}</div></div>
-      <div class="answers">${opts.map((o, i) => `<button class="ans" data-i="${i}" style="--c:${COLORS[i]}"><span class="shape">${SHAPES[i]}</span><span>${esc(o.t)}</span></button>`).join('')}</div>
+      <div class="qcard">${Q.prompt}</div>
+      <div class="answers ${Q.pics ? 'pics' : ''}">${opts.map((o, i) => `<button class="ans ${Q.pics ? 'pic' : ''}" data-i="${i}" style="--c:${COLORS[i]}">${Q.pics ? '' : `<span class="shape">${SHAPES[i]}</span>`}<span>${o.html}</span></button>`).join('')}</div>
       <div id="after"></div>`;
     stage.querySelectorAll('.ans').forEach(b => b.onclick = () => answer(+b.dataset.i));
 
@@ -473,7 +571,7 @@ function playerGame(pin) {
       if (ok) setTimeout(() => { if (phase === 'answered' && $('#stage') === stage) showChests(); }, 650);
       else {
         const after = $('#after');
-        after.innerHTML = `<div class="msg bad">❌ Chưa đúng! Đáp án: <b>${esc(q.a[0])}</b></div>`;
+        after.innerHTML = `<div class="msg bad">❌ Chưa đúng! Đáp án: ${Q.answer}</div>`;
         nextButton(after, 1500);
       }
     }
