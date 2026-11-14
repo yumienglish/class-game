@@ -188,3 +188,10 @@ button.small { padding: 6px 12px; font-size: .9rem; }
 .ans.pic.right { box-shadow: 0 0 0 4px #fff, 0 0 0 8px var(--mint-dd); }
 img.mini { width: 34px; height: 26px; object-fit: cover; border-radius: 6px; vertical-align: middle; border: 2px solid var(--ink); background: #fff; }
 img { -webkit-user-drag: none; user-select: none; }
+
+/* Nút âm thanh */
+#sndctl { position: fixed; right: 10px; bottom: 10px; z-index: 40; display: flex; gap: 6px; }
+#sndctl button { width: 42px; height: 42px; border-radius: 50%; border: none; background: rgba(255,255,255,.85); box-shadow: 0 2px 8px rgba(0,0,0,.15); font-size: 1.2rem; cursor: pointer; padding: 0; }
+#sndctl button.off { opacity: .45; filter: grayscale(1); }
+#sndctl.inline { position: static; }
+#sndctl.inline button { width: 34px; height: 34px; font-size: 1rem; box-shadow: none; background: transparent; }
